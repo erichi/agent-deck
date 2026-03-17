@@ -4024,7 +4024,7 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if h.showCostDashboard {
 			keyStr := msg.String()
-			if keyStr == "q" || keyStr == "$" || keyStr == "esc" {
+			if keyStr == "q" || keyStr == "C" || keyStr == "esc" {
 				h.showCostDashboard = false
 				return h, nil
 			}
@@ -5328,19 +5328,22 @@ func (h *Home) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, nil
 
 	case "$", "shift+4":
-		// Cost dashboard (when cost tracking is active), otherwise filter to error sessions
-		if h.costStore != nil {
-			h.showCostDashboard = true
-			h.costDashboard = newCostDashboard(h.costStore, h.width, h.height)
-			return h, nil
-		}
-		// Fallback: filter to error sessions only
+		// Filter to error sessions only
 		if h.statusFilter == session.StatusError {
 			h.statusFilter = "" // Toggle off
 		} else {
 			h.statusFilter = session.StatusError
 		}
 		h.rebuildFlatItems()
+		return h, nil
+
+	case "C", "shift+c":
+		// Cost dashboard
+		if h.costStore != nil {
+			h.showCostDashboard = true
+			h.costDashboard = newCostDashboard(h.costStore, h.width, h.height)
+			return h, nil
+		}
 		return h, nil
 	}
 

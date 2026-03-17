@@ -110,7 +110,6 @@ func handleHookHandler() {
 	writeHookStatus(instanceID, status, payload.SessionID, payload.HookEventName)
 
 	// Write cost event if this hook contains usage data
-	logCostDebug("hook event=%s instance=%s status=%s", payload.HookEventName, instanceID, status)
 	writeCostEvent(instanceID, data)
 }
 
@@ -332,49 +331,35 @@ type transcriptMessage struct {
 
 // writeCostEvent reads usage from the Claude transcript file on Stop events.
 func writeCostEvent(instanceID string, rawPayload []byte) {
-	logCostDebug("writeCostEvent called for instance=%s", instanceID)
-
 	var stop stopHookPayload
 	if err := json.Unmarshal(rawPayload, &stop); err != nil {
-		logCostDebug("payload parse error: %v", err)
 		return
 	}
 	if stop.HookEventName != "Stop" {
-		logCostDebug("not a Stop event, skipping")
 		return
 	}
 	if stop.TranscriptPath == "" {
-		logCostDebug("no transcript_path in Stop payload")
 		return
 	}
-	logCostDebug("transcript_path: %s", stop.TranscriptPath)
 
 	lastLine, err := readLastLine(stop.TranscriptPath)
 	if err != nil {
-		logCostDebug("read transcript failed: %v", err)
 		return
 	}
 
 	var msg transcriptMessage
 	if err := json.Unmarshal([]byte(lastLine), &msg); err != nil {
-		logCostDebug("parse transcript line failed: %v", err)
 		return
 	}
 
 	if msg.Type != "assistant" {
-		logCostDebug("last line type=%s, not assistant", msg.Type)
 		return
 	}
 
 	usage := msg.Message.Usage
 	if usage.InputTokens == 0 && usage.OutputTokens == 0 {
-		logCostDebug("no token usage in transcript")
 		return
 	}
-
-	logCostDebug("found usage: model=%s in=%d out=%d cache_read=%d cache_write=%d",
-		msg.Message.Model, usage.InputTokens, usage.OutputTokens,
-		usage.CacheReadInputTokens, usage.CacheCreationInputTokens)
 
 	costDir := getCostEventsDir()
 	if err := os.MkdirAll(costDir, 0755); err != nil {
@@ -402,11 +387,9 @@ func writeCostEvent(instanceID string, rawPayload []byte) {
 	finalPath := filepath.Join(costDir, filename)
 
 	if err := os.WriteFile(tmpPath, jsonData, 0644); err != nil {
-		logCostDebug("write failed: %v", err)
 		return
 	}
 	os.Rename(tmpPath, finalPath)
-	logCostDebug("wrote cost event: %s model=%s in=%d out=%d", finalPath, cf.Model, cf.InputTokens, cf.OutputTokens)
 }
 
 // readLastLine reads the last non-empty line from a file.
@@ -455,26 +438,6 @@ func readLastLine(path string) (string, error) {
 
 	// Entire file is one line
 	return strings.TrimSpace(string(buf)), nil
-}
-
-// logCostDebug writes debug messages to ~/.agent-deck/cost-debug.log
-// Only active when AGENTDECK_DEBUG is set.
-func logCostDebug(format string, args ...any) {
-	if os.Getenv("AGENTDECK_DEBUG") == "" {
-		return
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return
-	}
-	logPath := filepath.Join(home, ".agent-deck", "cost-debug.log")
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(f, "%s %s\n", time.Now().Format("15:04:05.000"), msg)
 }
 
 // getCostEventsDir returns the path to the cost events directory.

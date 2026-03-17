@@ -406,7 +406,7 @@ agent-deck web --token my-secret
 | `f` / `F` | Fork (quick / dialog) |
 | `m` | MCP Manager |
 | `s` | Skills Manager (Claude) |
-| `$` | Cost Dashboard |
+| `C` | Cost Dashboard |
 | `M` | Move session to group |
 | `S` | Settings |
 | `/` / `G` | Search / Global search |

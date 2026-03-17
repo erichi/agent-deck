@@ -507,6 +507,7 @@ func main() {
 
 			// Process incoming cost events from hooks
 			go func() {
+				costLog := logging.ForComponent(logging.CompUI)
 				for raw := range costWatcher.EventCh() {
 					ev := costs.CostEvent{
 						ID:               fmt.Sprintf("%s_%d", raw.InstanceID, raw.Timestamp),
@@ -519,7 +520,22 @@ func main() {
 						CacheWriteTokens: raw.CacheWriteTokens,
 						CostMicrodollars: pricer.ComputeCost(raw.Model, raw.InputTokens, raw.OutputTokens, raw.CacheReadTokens, raw.CacheWriteTokens),
 					}
-					_ = costStore.WriteCostEvent(ev)
+					if err := costStore.WriteCostEvent(ev); err != nil {
+						costLog.Error("cost_event_write_failed", slog.String("error", err.Error()))
+						continue
+					}
+					result := budgetChecker.Check(ev.SessionID, "")
+					if result.Action == costs.BudgetActionWarn {
+						costLog.Warn("budget_warning",
+							slog.String("session", ev.SessionID),
+							slog.String("reason", result.Reason),
+							slog.Float64("pct", result.Percentage))
+					} else if result.Action == costs.BudgetActionStop {
+						costLog.Error("budget_exceeded",
+							slog.String("session", ev.SessionID),
+							slog.String("reason", result.Reason),
+							slog.Float64("pct", result.Percentage))
+					}
 				}
 			}()
 		}

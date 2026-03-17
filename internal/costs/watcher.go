@@ -124,12 +124,14 @@ func (w *CostEventWatcher) processFile(path string) {
 	}
 	var ev RawCostEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
+		os.Remove(path)
 		return
 	}
-	os.Remove(path)
 
 	select {
 	case w.eventCh <- ev:
+		os.Remove(path)
 	default:
+		// Channel full; leave file for retry on next debounce cycle
 	}
 }

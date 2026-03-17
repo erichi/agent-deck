@@ -310,9 +310,6 @@ func (s *Server) handleCostsStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	costChanges := s.subscribeCostChanges()
-	defer s.unsubscribeCostChanges(costChanges)
-
 	pollTicker := time.NewTicker(costStreamPollInterval)
 	defer pollTicker.Stop()
 
@@ -320,25 +317,6 @@ func (s *Server) handleCostsStream(w http.ResponseWriter, r *http.Request) {
 	defer heartbeatTicker.Stop()
 
 	ctx := r.Context()
-	emitIfChanged := func() error {
-		next, err := s.buildCostSummary()
-		if err != nil {
-			logging.ForComponent(logging.CompWeb).Error("cost_stream_refresh_failed",
-				slog.String("error", err.Error()))
-			return nil
-		}
-		if next.TodayMicro == lastToday && next.WeekMicro == lastWeek && next.MonthMicro == lastMonth {
-			return nil
-		}
-		if err := writeSSEEvent(w, flusher, "cost_summary", next); err != nil {
-			return err
-		}
-		lastToday = next.TodayMicro
-		lastWeek = next.WeekMicro
-		lastMonth = next.MonthMicro
-		return nil
-	}
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -347,25 +325,33 @@ func (s *Server) handleCostsStream(w http.ResponseWriter, r *http.Request) {
 			if err := writeSSEComment(w, flusher, "keepalive"); err != nil {
 				return
 			}
-		case <-costChanges:
-			if err := emitIfChanged(); err != nil {
-				return
-			}
 		case <-pollTicker.C:
-			if err := emitIfChanged(); err != nil {
+			next, err := s.buildCostSummary()
+			if err != nil {
+				logging.ForComponent(logging.CompWeb).Error("cost_stream_refresh_failed",
+					slog.String("error", err.Error()))
+				continue
+			}
+			if next.TodayMicro == lastToday && next.WeekMicro == lastWeek && next.MonthMicro == lastMonth {
+				continue
+			}
+			if err := writeSSEEvent(w, flusher, "cost_summary", next); err != nil {
 				return
 			}
+			lastToday = next.TodayMicro
+			lastWeek = next.WeekMicro
+			lastMonth = next.MonthMicro
 		}
 	}
 }
 
 type costSummarySSE struct {
-	TodayUSD    float64 `json:"today_usd"`
-	WeekUSD     float64 `json:"week_usd"`
-	MonthUSD    float64 `json:"month_usd"`
-	TodayMicro  int64   `json:"-"`
-	WeekMicro   int64   `json:"-"`
-	MonthMicro  int64   `json:"-"`
+	TodayUSD   float64 `json:"today_usd"`
+	WeekUSD    float64 `json:"week_usd"`
+	MonthUSD   float64 `json:"month_usd"`
+	TodayMicro int64   `json:"-"`
+	WeekMicro  int64   `json:"-"`
+	MonthMicro int64   `json:"-"`
 }
 
 func (s *Server) buildCostSummary() (*costSummarySSE, error) {
@@ -535,7 +521,7 @@ func (s *Server) handleCostsSessionDetail(w http.ResponseWriter, r *http.Request
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_id":    sessionID,
-		"cost_usd":     microToUSD(summary.TotalCostMicrodollars),
+		"cost_usd":      microToUSD(summary.TotalCostMicrodollars),
 		"input_tokens":  summary.TotalInputTokens,
 		"output_tokens": summary.TotalOutputTokens,
 		"cache_read":    summary.TotalCacheReadTokens,
